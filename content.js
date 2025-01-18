@@ -14,7 +14,8 @@ document.addEventListener('mouseup', async (event) => {
     const selectedNode = range.commonAncestorContainer;
 
     // 确保我们不会翻译已经翻译过的文本
-    if (selectedNode.parentElement.classList.contains('translation-text')) {
+    if (selectedNode.parentElement.classList.contains('translation-text') ||
+        selectedNode.parentElement.classList.contains('translation-wrapper')) {
         return;
     }
 
@@ -29,19 +30,56 @@ document.addEventListener('mouseup', async (event) => {
                 }
                 
                 if (response && response.translation) {
-                    // 创建翻译文本元素
-                    const translationSpan = document.createElement('span');
-                    translationSpan.className = 'translation-text';
-                    translationSpan.style.color = '#2196F3';  // 使用蓝色
-                    translationSpan.style.fontSize = '0.9em';
-                    translationSpan.style.margin = '0 4px';
-                    translationSpan.textContent = `「${response.translation}」`;
+                    // 创建包装容器
+                    const wrapper = document.createElement('span');
+                    wrapper.className = 'translation-wrapper';
+                    wrapper.style.display = 'inline-block';
+                    wrapper.style.position = 'relative';
+                    wrapper.style.textAlign = 'center';
+                    wrapper.style.marginTop = '8px'; // 减少顶部间距
+                    
+                    // 获取父元素
+                    const parentElement = range.commonAncestorContainer.parentElement;
+                    if (parentElement) {
+                        // 保持当前行距
+                        parentElement.style.lineHeight = '1.8';
+                    }
 
-                    // 在原文后插入翻译
+                    // 创建翻译文本元素
+                    const translationSpan = document.createElement('div');
+                    translationSpan.className = 'translation-text';
+                    translationSpan.style.position = 'absolute';
+                    translationSpan.style.bottom = '100%';
+                    translationSpan.style.left = '50%';
+                    translationSpan.style.transform = 'translateX(-50%)';
+                    translationSpan.style.color = '#666';
+                    translationSpan.style.fontSize = '12px';
+                    translationSpan.style.lineHeight = '1';
+                    translationSpan.style.whiteSpace = 'nowrap';
+                    translationSpan.style.marginBottom = '-4px'; // 让翻译文字更靠近原文
+                    translationSpan.style.backgroundColor = 'rgba(255, 255, 255, 0.95)'; // 增加背景不透明度
+                    translationSpan.style.padding = '1px 4px';
+                    translationSpan.style.borderRadius = '2px'; // 添加圆角
+                    translationSpan.textContent = response.translation;
+
+                    // 创建原文容器
+                    const originalTextSpan = document.createElement('span');
+                    originalTextSpan.textContent = selectedText;
+                    // 使用text-decoration实现波浪下划线
+                    originalTextSpan.style.textDecoration = 'wavy underline #4CAF50';
+                    originalTextSpan.style.textDecorationSkipInk = 'none'; // 确保下划线完整显示
+                    originalTextSpan.style.textUnderlineOffset = '2px'; // 调整下划线距离
+                    originalTextSpan.style.display = 'inline-block';
+                    originalTextSpan.style.lineHeight = '1.1';
+
+                    // 组装DOM结构
+                    wrapper.appendChild(translationSpan);
+                    wrapper.appendChild(originalTextSpan);
+
+                    // 替换原文
                     const newRange = document.createRange();
-                    newRange.setStart(range.endContainer, range.endOffset);
-                    newRange.setEnd(range.endContainer, range.endOffset);
-                    newRange.insertNode(translationSpan);
+                    range.deleteContents();
+                    range.insertNode(wrapper);
 
                     // 清除选择
                     selection.removeAllRanges();
