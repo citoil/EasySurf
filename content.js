@@ -29,15 +29,25 @@ document.addEventListener('mouseup', async (event) => {
         chrome.runtime.sendMessage(
             { type: 'translate', text: selectedText },
             response => {
+                if (chrome.runtime.lastError) {
+                    console.error('Chrome runtime error:', chrome.runtime.lastError);
+                    popup.innerHTML = `<p class="translation-text">错误: ${chrome.runtime.lastError.message}</p>`;
+                    return;
+                }
+                
                 if (response && response.translation) {
                     popup.innerHTML = `<p class="translation-text">${response.translation}</p>`;
+                } else if (response && response.error) {
+                    console.error('Translation error:', response.error);
+                    popup.innerHTML = `<p class="translation-text">翻译失败: ${response.error}</p>`;
                 } else {
-                    popup.innerHTML = '<p class="translation-text">翻译失败，请重试</p>';
+                    popup.innerHTML = '<p class="translation-text">翻译服务异常，请检查配置</p>';
                 }
             }
         );
     } catch (error) {
-        popup.innerHTML = '<p class="translation-text">翻译服务出错</p>';
+        console.error('Translation error:', error);
+        popup.innerHTML = `<p class="translation-text">翻译出错: ${error.message}</p>`;
     }
 });
 
