@@ -1,7 +1,9 @@
 // 默认配置
 const DEFAULT_CONFIG = {
-    apiEndpoint: 'https://api.openai.com/v1/chat/completions',
-    modelName: 'gpt-3.5-turbo'
+    apiEndpoint: 'https://api.deepseek.com/v1/chat/completions',
+    modelName: 'deepseek-chat',
+    enableSelectTranslate: true,
+    enableShiftTranslate: true
 };
 
 // 调试日志函数
@@ -36,7 +38,9 @@ document.getElementById('showConfig').addEventListener('click', async () => {
     debugLog('当前配置', {
         apiEndpoint: config.apiEndpoint || DEFAULT_CONFIG.apiEndpoint,
         modelName: config.modelName || DEFAULT_CONFIG.modelName,
-        hasApiKey: !!config.apiKey
+        hasApiKey: !!config.apiKey,
+        enableSelectTranslate: config.enableSelectTranslate,
+        enableShiftTranslate: config.enableShiftTranslate
     });
 });
 
@@ -44,7 +48,7 @@ document.getElementById('showConfig').addEventListener('click', async () => {
 document.getElementById('testConnection').addEventListener('click', async () => {
     try {
         debugLog('开始测试连接...');
-        const result = await translateText('Hello, this is a test message.');
+        const result = await handleTranslation('Hello, this is a test message.');
         debugLog('测试连接成功', { result });
     } catch (error) {
         debugLog('测试连接失败', { error: error.message });
@@ -56,7 +60,9 @@ document.getElementById('saveConfig').addEventListener('click', () => {
     const config = {
         apiKey: document.getElementById('apiKey').value.trim(),
         apiEndpoint: document.getElementById('apiEndpoint').value.trim() || DEFAULT_CONFIG.apiEndpoint,
-        modelName: document.getElementById('modelName').value.trim() || DEFAULT_CONFIG.modelName
+        modelName: document.getElementById('modelName').value.trim() || DEFAULT_CONFIG.modelName,
+        enableSelectTranslate: document.getElementById('enableSelectTranslate').checked,
+        enableShiftTranslate: document.getElementById('enableShiftTranslate').checked
     };
 
     if (!config.apiKey) {
@@ -70,7 +76,9 @@ document.getElementById('saveConfig').addEventListener('click', () => {
         debugLog('配置已保存', {
             endpoint: config.apiEndpoint,
             model: config.modelName,
-            hasKey: !!config.apiKey
+            hasKey: !!config.apiKey,
+            enableSelectTranslate: config.enableSelectTranslate,
+            enableShiftTranslate: config.enableShiftTranslate
         });
         alert('配置已保存！');
     });
@@ -88,10 +96,18 @@ chrome.storage.sync.get(['translatorConfig'], (result) => {
     if (config.modelName) {
         document.getElementById('modelName').value = config.modelName;
     }
+    if (typeof config.enableSelectTranslate !== 'undefined') {
+        document.getElementById('enableSelectTranslate').checked = config.enableSelectTranslate;
+    }
+    if (typeof config.enableShiftTranslate !== 'undefined') {
+        document.getElementById('enableShiftTranslate').checked = config.enableShiftTranslate;
+    }
     debugLog('已加载配置', {
         hasEndpoint: !!config.apiEndpoint,
         hasModel: !!config.modelName,
-        hasKey: !!config.apiKey
+        hasKey: !!config.apiKey,
+        enableSelectTranslate: config.enableSelectTranslate,
+        enableShiftTranslate: config.enableShiftTranslate
     });
 });
 

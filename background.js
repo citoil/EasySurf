@@ -18,25 +18,21 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     
     if (request.type === 'translate') {
         console.log('Processing translation request for:', request.text);
-        
-        // 使用Promise包装异步操作
-        (async () => {
-            try {
-                const translation = await handleTranslation(request.text);
-                console.log('Translation successful:', translation);
-                sendResponse({ translation });
-            } catch (error) {
+        handleTranslation(request.text, request.mode || 'simple')
+            .then(result => {
+                console.log('Translation successful:', result);
+                sendResponse(result);
+            })
+            .catch(error => {
                 console.error('Translation error:', error);
                 sendResponse({ error: error.message });
-            }
-        })();
-        
-        return true; // 保持消息通道开放
+            });
+        return true;
     }
 });
 
 // 调用API进行翻译
-async function handleTranslation(text) {
+async function handleTranslation(text, mode) {
     console.log('Getting config from storage');
     
     const config = await new Promise(resolve => {
@@ -55,9 +51,35 @@ async function handleTranslation(text) {
     }
 
     try {
-        const requestBody = {
-            model: config.modelName || DEFAULT_CONFIG.modelName,
-            messages: [
+        let messages;
+        if (mode === 'annotate') {
+            messages = [
+                {
+                    role: "system",
+                    content: "你是一名英语教学助手，帮助中国程序员理解英文文本。请分析文本中可能难以理解的单词或短语，并提供准确的中文释义。返回格式必须是一个包含annotations数组的JSON对象。"
+                },
+                {
+                    role: "user",
+                    content: `我是一名中国的程序员，本科毕业英语水平，现在正在阅读下面的英语段落，请联系上下文，找出段落里对我来说不易理解的单词/短语，并且展示这个单词/短语在这句话中代表的意思。请严格按照如下JSON格式返回：
+{
+    "annotations": [
+        {
+            "word": "难词1",
+            "meaning": "中文含义1"
+        },
+        {
+            "word": "难词2",
+            "meaning": "中文含义2"
+        }
+    ]
+}
+
+以下是需要分析的文本：
+${text}`
+                }
+            ];
+        } else {
+            messages = [
                 {
                     role: "system",
                     content: "你是一个翻译助手，请将用户输入的英文翻译成中文，只返回翻译结果，不需要解释或其他内容。"
@@ -66,8 +88,14 @@ async function handleTranslation(text) {
                     role: "user",
                     content: text
                 }
-            ],
-            temperature: 0.3
+            ];
+        }
+
+        const requestBody = {
+            model: config.modelName || DEFAULT_CONFIG.modelName,
+            messages: messages,
+            temperature: 0.3,
+            response_format: mode === 'annotate' ? { type: "json_object" } : undefined
         };
 
         console.log('Sending API request to:', config.apiEndpoint || DEFAULT_CONFIG.apiEndpoint);
@@ -91,12 +119,33 @@ async function handleTranslation(text) {
 
         const data = await response.json();
         console.log('API response data:', data);
-        
-        if (!data.choices?.[0]?.message?.content) {
-            throw new Error('响应数据格式错误');
-        }
 
-        return data.choices[0].message.content.trim();
+        if (mode === 'annotate') {
+            try {
+                // 解析返回的JSON
+                let parsedData;
+                if (typeof data.choices[0].message.content === 'string') {
+                    parsedData = JSON.parse(data.choices[0].message.content);
+                } else {
+                    parsedData = data.choices[0].message.content;
+                }
+
+                // 验证数据格式
+                if (!parsedData.annotations || !Array.isArray(parsedData.annotations)) {
+                    throw new Error('API返回的数据格式不正确');
+                }
+
+                return { annotations: parsedData.annotations };
+            } catch (error) {
+                console.error('Failed to parse annotations:', error);
+                throw new Error('注释数据格式错误');
+            }
+        } else {
+            if (!data.choices?.[0]?.message?.content) {
+                throw new Error('响应数据格式错误');
+            }
+            return { translation: data.choices[0].message.content.trim() };
+        }
     } catch (error) {
         console.error('API request failed:', error);
         throw error;

@@ -91,6 +91,30 @@
     #testConnection:hover {
       background-color: #3f51b5;
     }
+    .feature-toggles {
+      margin: 15px 0;
+      padding: 15px;
+      background: #f5f5f5;
+      border-radius: 4px;
+    }
+    .toggle-group {
+      margin-bottom: 10px;
+    }
+    .toggle-group label {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
+    }
+    .toggle-group input[type="checkbox"] {
+      width: auto;
+      margin-right: 8px;
+    }
+    .toggle-description {
+      font-size: 12px;
+      color: #666;
+      margin-left: 24px;
+      margin-top: 2px;
+    }
   </style>
 </head>
 <body>
@@ -113,6 +137,26 @@
       <label for="modelName">模型名称：</label>
       <input type="text" id="modelName" placeholder="gpt-3.5-turbo">
       <div class="hint">输入要使用的模型名称</div>
+    </div>
+
+    <div class="feature-toggles">
+      <h3 style="margin-top: 0;">功能开关</h3>
+      
+      <div class="toggle-group">
+        <label>
+          <input type="checkbox" id="enableSelectTranslate" checked>
+          <span>启用选词翻译</span>
+        </label>
+        <div class="toggle-description">选中英文单词时自动显示翻译</div>
+      </div>
+
+      <div class="toggle-group">
+        <label>
+          <input type="checkbox" id="enableShiftTranslate" checked>
+          <span>启用段落翻译</span>
+        </label>
+        <div class="toggle-description">双击Shift键翻译当前段落中的难词</div>
+      </div>
     </div>
     
     <button id="saveConfig">保存配置</button>
