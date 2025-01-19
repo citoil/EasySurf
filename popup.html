@@ -2,177 +2,164 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>翻译插件配置</title>
+  <title>EasySurf</title>
   <style>
     body {
-      width: 350px;
+      width: 300px;
       padding: 15px;
       font-family: Arial, sans-serif;
     }
+    
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 15px;
+    }
+    
+    .header h2 {
+      margin: 0;
+      color: #1976D2;
+    }
+    
+    .settings-link {
+      color: #666;
+      text-decoration: none;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    .settings-link:hover {
+      color: #1976D2;
+    }
+    
     .status {
       padding: 10px;
       border-radius: 4px;
-      margin-bottom: 10px;
-      background-color: #e8f5e9;
-      color: #2e7d32;
+      margin-bottom: 15px;
+      background-color: #E8F5E9;
+      color: #2E7D32;
+      font-size: 14px;
     }
-    .config-form {
-      margin-top: 10px;
-    }
-    .form-group {
+    
+    .feature-toggles {
+      background: #f5f5f5;
+      border-radius: 4px;
+      padding: 15px;
       margin-bottom: 15px;
     }
-    .form-group label {
-      display: block;
-      margin-bottom: 5px;
-      color: #333;
-      font-weight: bold;
-    }
-    input {
-      width: 100%;
-      padding: 8px;
-      margin: 5px 0;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      box-sizing: border-box;
-    }
-    button {
-      width: 100%;
-      padding: 8px;
-      margin: 5px 0;
-      background-color: #0078d4;
-      color: white;
-      border: none;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-    button:hover {
-      background-color: #006cbd;
-    }
-    .hint {
-      font-size: 12px;
-      color: #666;
-      margin-top: 3px;
-    }
-    .debug-section {
-      margin-top: 20px;
-      border-top: 1px solid #ddd;
-      padding-top: 10px;
-    }
-    .debug-title {
-      font-weight: bold;
-      margin-bottom: 10px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .debug-content {
-      background: #f5f5f5;
-      padding: 10px;
-      border-radius: 4px;
-      font-family: monospace;
-      font-size: 12px;
-      max-height: 200px;
-      overflow-y: auto;
-      white-space: pre-wrap;
-      word-break: break-all;
-    }
-    .debug-buttons {
-      display: flex;
-      gap: 10px;
-      margin-top: 10px;
-    }
-    .debug-buttons button {
-      flex: 1;
-    }
-    #testConnection {
-      background-color: #5c6bc0;
-    }
-    #testConnection:hover {
-      background-color: #3f51b5;
-    }
-    .feature-toggles {
-      margin: 15px 0;
-      padding: 15px;
-      background: #f5f5f5;
-      border-radius: 4px;
-    }
+    
     .toggle-group {
-      margin-bottom: 10px;
+      margin-bottom: 12px;
     }
+    
+    .toggle-group:last-child {
+      margin-bottom: 0;
+    }
+    
     .toggle-group label {
       display: flex;
       align-items: center;
       cursor: pointer;
     }
+    
     .toggle-group input[type="checkbox"] {
-      width: auto;
       margin-right: 8px;
     }
+    
     .toggle-description {
       font-size: 12px;
       color: #666;
       margin-left: 24px;
       margin-top: 2px;
     }
+
+    .action-buttons {
+      margin-bottom: 15px;
+    }
+
+    .action-button {
+      width: 100%;
+      padding: 10px;
+      background-color: #2196F3;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: background-color 0.3s;
+    }
+
+    .action-button:hover {
+      background-color: #1976D2;
+    }
+
+    .action-button svg {
+      width: 16px;
+      height: 16px;
+    }
+    
+    .footer {
+      margin-top: 15px;
+      padding-top: 10px;
+      border-top: 1px solid #eee;
+      text-align: center;
+      font-size: 12px;
+      color: #666;
+    }
   </style>
 </head>
 <body>
-  <h2>翻译插件配置</h2>
+  <div class="header">
+    <h2>EasySurf</h2>
+    <a href="#" class="settings-link" id="openOptions">
+      <span>设置</span>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"/>
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
+      </svg>
+    </a>
+  </div>
+  
   <div class="status">插件已启用</div>
-  <div class="config-form">
-    <div class="form-group">
-      <label for="apiKey">API Key：</label>
-      <input type="password" id="apiKey" placeholder="输入您的API Key">
-      <div class="hint">API密钥将被安全存储</div>
-    </div>
-    
-    <div class="form-group">
-      <label for="apiEndpoint">API地址：</label>
-      <input type="text" id="apiEndpoint" placeholder="https://api.openai.com/v1/chat/completions">
-      <div class="hint">支持OpenAI及兼容接口</div>
-    </div>
-    
-    <div class="form-group">
-      <label for="modelName">模型名称：</label>
-      <input type="text" id="modelName" placeholder="gpt-3.5-turbo">
-      <div class="hint">输入要使用的模型名称</div>
+
+  <div class="action-buttons">
+    <button id="translatePage" class="action-button">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 3v18M3 12h18"/>
+      </svg>
+      翻译整页
+    </button>
+  </div>
+  
+  <div class="feature-toggles">
+    <div class="toggle-group">
+      <label>
+        <input type="checkbox" id="enableSelectTranslate" checked>
+        <span>启用选词翻译</span>
+      </label>
+      <div class="toggle-description">选中英文单词时自动显示翻译</div>
     </div>
 
-    <div class="feature-toggles">
-      <h3 style="margin-top: 0;">功能开关</h3>
-      
-      <div class="toggle-group">
-        <label>
-          <input type="checkbox" id="enableSelectTranslate" checked>
-          <span>启用选词翻译</span>
-        </label>
-        <div class="toggle-description">选中英文单词时自动显示翻译</div>
-      </div>
-
-      <div class="toggle-group">
-        <label>
-          <input type="checkbox" id="enableShiftTranslate" checked>
-          <span>启用段落翻译</span>
-        </label>
-        <div class="toggle-description">双击Shift键翻译当前段落中的难词</div>
-      </div>
-    </div>
-    
-    <button id="saveConfig">保存配置</button>
-    
-    <div class="debug-section">
-      <div class="debug-title">
-        <span>调试工具</span>
-        <button id="clearLogs" style="width: auto; padding: 4px 8px;">清除日志</button>
-      </div>
-      <div class="debug-buttons">
-        <button id="testConnection">测试连接</button>
-        <button id="showConfig">显示当前配置</button>
-      </div>
-      <div id="debugOutput" class="debug-content">等待调试信息...</div>
+    <div class="toggle-group">
+      <label>
+        <input type="checkbox" id="enableShiftTranslate" checked>
+        <span>启用段落翻译</span>
+      </label>
+      <div class="toggle-description">双击Shift键翻译当前段落中的难词</div>
     </div>
   </div>
+  
+  <div class="footer">
+    点击设置图标配置API和更多选项
+  </div>
+  
   <script src="popup.js"></script>
 </body>
 </html> 

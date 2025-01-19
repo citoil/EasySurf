@@ -3,15 +3,18 @@ let lastShiftTime = 0;
 let currentParagraph = null;
 let config = {
     enableSelectTranslate: true,
-    enableShiftTranslate: true
+    enableShiftTranslate: true,
+    maxConcurrent: 5
 };
+
+// 用于记录已翻译的段落
+const translatedParagraphs = new WeakSet();
 
 // 加载配置
 function loadConfig() {
     chrome.storage.sync.get(['translatorConfig'], (result) => {
         if (result.translatorConfig) {
-            config.enableSelectTranslate = result.translatorConfig.enableSelectTranslate;
-            config.enableShiftTranslate = result.translatorConfig.enableShiftTranslate;
+            config = { ...config, ...result.translatorConfig };
         }
     });
 }
@@ -23,10 +26,107 @@ loadConfig();
 chrome.storage.onChanged.addListener((changes, namespace) => {
     if (namespace === 'sync' && changes.translatorConfig) {
         const newConfig = changes.translatorConfig.newValue;
-        config.enableSelectTranslate = newConfig.enableSelectTranslate;
-        config.enableShiftTranslate = newConfig.enableShiftTranslate;
+        config = { ...config, ...newConfig };
     }
 });
+
+// 获取页面中所有可翻译的段落
+function getAllParagraphs() {
+    const paragraphs = [];
+    const walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_TEXT,
+        {
+            acceptNode: function(node) {
+                // 检查节点是否包含英文文本
+                if (!/[a-zA-Z]/.test(node.textContent)) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                
+                // 检查父节点是否是已翻译的元素
+                if (node.parentElement.classList.contains('translation-text') ||
+                    node.parentElement.classList.contains('translation-wrapper')) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                
+                // 检查文本是否为空或只包含空白字符
+                if (!node.textContent.trim()) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                
+                return NodeFilter.FILTER_ACCEPT;
+            }
+        }
+    );
+
+    let node;
+    while (node = walker.nextNode()) {
+        if (node.parentElement && !translatedParagraphs.has(node.parentElement)) {
+            paragraphs.push(node.parentElement);
+        }
+    }
+    
+    return [...new Set(paragraphs)]; // 去重
+}
+
+// 使用信号量控制并发
+class Semaphore {
+    constructor(max) {
+        this.max = max;
+        this.count = 0;
+        this.queue = [];
+    }
+
+    async acquire() {
+        if (this.count < this.max) {
+            this.count++;
+            return Promise.resolve();
+        }
+
+        return new Promise(resolve => this.queue.push(resolve));
+    }
+
+    release() {
+        this.count--;
+        if (this.queue.length > 0) {
+            this.count++;
+            const next = this.queue.shift();
+            next();
+        }
+    }
+}
+
+// 处理整页翻译
+async function handlePageTranslation() {
+    const paragraphs = getAllParagraphs();
+    if (paragraphs.length === 0) {
+        console.log('No paragraphs found for translation');
+        return;
+    }
+
+    console.log(`Found ${paragraphs.length} paragraphs to translate`);
+    const semaphore = new Semaphore(config.maxConcurrent);
+    const promises = [];
+
+    for (const paragraph of paragraphs) {
+        const promise = (async () => {
+            await semaphore.acquire();
+            try {
+                await handleParagraphAnnotation(paragraph);
+            } finally {
+                semaphore.release();
+            }
+        })();
+        promises.push(promise);
+    }
+
+    try {
+        await Promise.all(promises);
+        console.log('Page translation completed');
+    } catch (error) {
+        console.error('Error during page translation:', error);
+    }
+}
 
 // 跟踪鼠标悬停的段落
 document.addEventListener('mousemove', (event) => {
@@ -47,6 +147,11 @@ document.addEventListener('keydown', (event) => {
         const currentTime = new Date().getTime();
         if (currentTime - lastShiftTime <= 500) { // 500ms内的两次Shift按键视为双击
             if (currentParagraph) {
+                // 检查段落是否已经翻译过
+                if (translatedParagraphs.has(currentParagraph)) {
+                    console.log('段落已经翻译过了');
+                    return;
+                }
                 console.log('Annotating paragraph:', currentParagraph.textContent.substring(0, 50) + '...');
                 handleParagraphAnnotation(currentParagraph);
             } else {
@@ -150,12 +255,40 @@ async function handleWordTranslation(event) {
     }
 }
 
+// 创建加载指示器
+function createLoadingSpinner() {
+    const spinner = document.createElement('div');
+    spinner.className = 'translation-spinner';
+    spinner.style.cssText = `
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        margin-left: 8px;
+        border: 2px solid #4CAF50;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        vertical-align: middle;
+    `;
+
+    // 添加动画样式
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    `;
+    document.head.appendChild(style);
+
+    return spinner;
+}
+
 // 处理段落标注
 async function handleParagraphAnnotation(paragraph) {
     if (!config.enableShiftTranslate) return;
     
     // 确保不重复处理已标注的段落
-    if (paragraph.classList.contains('annotated')) {
+    if (translatedParagraphs.has(paragraph)) {
         console.log('Paragraph already annotated');
         return;
     }
@@ -166,10 +299,17 @@ async function handleParagraphAnnotation(paragraph) {
         return;
     }
 
+    // 添加加载指示器
+    const spinner = createLoadingSpinner();
+    paragraph.appendChild(spinner);
+
     try {
         chrome.runtime.sendMessage(
             { type: 'translate', text: text, mode: 'annotate' },
             response => {
+                // 移除加载指示器
+                spinner.remove();
+
                 if (chrome.runtime.lastError) {
                     console.error('Chrome runtime error:', chrome.runtime.lastError);
                     return;
@@ -209,7 +349,8 @@ async function handleParagraphAnnotation(paragraph) {
 
                     // 更新段落内容
                     paragraph.innerHTML = tempContainer.innerHTML;
-                    paragraph.classList.add('annotated');
+                    // 将段落添加到已翻译集合中
+                    translatedParagraphs.add(paragraph);
                     paragraph.style.lineHeight = '1.8';
                     console.log('Annotation completed');
                 } else {
@@ -218,9 +359,24 @@ async function handleParagraphAnnotation(paragraph) {
             }
         );
     } catch (error) {
+        // 发生错误时也移除加载指示器
+        spinner.remove();
         console.error('Annotation error:', error);
     }
 }
+
+// 监听来自popup的消息
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.type === 'translatePage') {
+        handlePageTranslation().then(() => {
+            sendResponse({ success: true });
+        }).catch(error => {
+            console.error('Page translation error:', error);
+            sendResponse({ success: false, error: error.message });
+        });
+        return true; // 保持消息通道开放
+    }
+});
 
 // 监听鼠标事件（保留单词翻译功能）
 document.addEventListener('mouseup', handleWordTranslation);
