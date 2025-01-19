@@ -365,8 +365,23 @@ async function handleParagraphAnnotation(paragraph) {
     }
 }
 
-// 监听来自popup的消息
+// 在文件开头添加日志处理函数
+function logToConsole(message, data) {
+    const style = 'color: #2196F3; font-weight: bold;';
+    if (data) {
+        console.log('%c' + message, style, data);
+    } else {
+        console.log('%c' + message, style);
+    }
+}
+
+// 在现有的消息监听器中添加日志处理
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.type === 'log') {
+        logToConsole(request.message, request.data);
+        return;
+    }
+    
     if (request.type === 'translatePage') {
         handlePageTranslation().then(() => {
             sendResponse({ success: true });
@@ -374,7 +389,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             console.error('Page translation error:', error);
             sendResponse({ success: false, error: error.message });
         });
-        return true; // 保持消息通道开放
+        return true;
     }
 });
 

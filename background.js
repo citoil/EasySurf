@@ -4,6 +4,25 @@ const DEFAULT_CONFIG = {
     modelName: 'deepseek-chat'
 };
 
+// 发送日志到content script
+async function sendLog(message, data = null) {
+    const logMessage = `[时间统计] ${message}`;
+    console.log(logMessage, data);
+    
+    try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab) {
+            chrome.tabs.sendMessage(tab.id, {
+                type: 'log',
+                message: logMessage,
+                data: data
+            });
+        }
+    } catch (error) {
+        console.error('发送日志失败:', error);
+    }
+}
+
 // 初始化时输出日志
 console.log('Background script loaded');
 
@@ -14,17 +33,20 @@ chrome.runtime.onInstalled.addListener(() => {
 
 // 处理来自content script的翻译请求
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log('Received message:', request);
+    const startTime = performance.now();
+    sendLog('收到翻译请求', request);
     
     if (request.type === 'translate') {
-        console.log('Processing translation request for:', request.text);
+        sendLog('开始处理翻译', request.text.substring(0, 50) + '...');
         handleTranslation(request.text, request.mode || 'simple')
             .then(result => {
-                console.log('Translation successful:', result);
+                const endTime = performance.now();
+                sendLog('翻译完成', `总耗时: ${(endTime - startTime).toFixed(2)}ms`);
                 sendResponse(result);
             })
             .catch(error => {
-                console.error('Translation error:', error);
+                const endTime = performance.now();
+                sendLog('翻译失败', `总耗时: ${(endTime - startTime).toFixed(2)}ms, 错误: ${error.message}`);
                 sendResponse({ error: error.message });
             });
         return true;
@@ -33,15 +55,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 // 调用API进行翻译
 async function handleTranslation(text, mode) {
-    console.log('Getting config from storage');
+    const timings = {
+        start: performance.now(),
+        configLoaded: 0,
+        requestSent: 0,
+        responseReceived: 0,
+        end: 0
+    };
+    
+    sendLog('开始加载配置');
     
     const config = await new Promise(resolve => {
         chrome.storage.sync.get(['translatorConfig'], (result) => {
-            console.log('Config loaded:', {
-                hasKey: !!result.translatorConfig?.apiKey,
-                endpoint: result.translatorConfig?.apiEndpoint || DEFAULT_CONFIG.apiEndpoint,
-                model: result.translatorConfig?.modelName || DEFAULT_CONFIG.modelName
-            });
+            timings.configLoaded = performance.now();
+            sendLog('配置加载完成', `耗时: ${(timings.configLoaded - timings.start).toFixed(2)}ms`);
             resolve(result.translatorConfig || {});
         });
     });
@@ -98,7 +125,9 @@ ${text}`
             response_format: mode === 'annotate' ? { type: "json_object" } : undefined
         };
 
-        console.log('Sending API request to:', config.apiEndpoint || DEFAULT_CONFIG.apiEndpoint);
+        sendLog('准备发送API请求');
+        timings.requestSent = performance.now();
+        sendLog('请求准备完成', `耗时: ${(timings.requestSent - timings.configLoaded).toFixed(2)}ms`);
         
         const response = await fetch(config.apiEndpoint || DEFAULT_CONFIG.apiEndpoint, {
             method: 'POST',
@@ -109,16 +138,26 @@ ${text}`
             body: JSON.stringify(requestBody)
         });
 
-        console.log('API response status:', response.status);
+        timings.responseReceived = performance.now();
+        sendLog('收到API响应', `耗时: ${(timings.responseReceived - timings.requestSent).toFixed(2)}ms`);
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));
-            console.error('API error:', errorData);
+            sendLog('API错误', errorData);
             throw new Error(errorData.error?.message || `请求失败: ${response.status} ${response.statusText}`);
         }
 
         const data = await response.json();
-        console.log('API response data:', data);
+        timings.end = performance.now();
+        sendLog('响应解析完成', `耗时: ${(timings.end - timings.responseReceived).toFixed(2)}ms`);
+
+        const timingSummary = {
+            '配置加载': `${(timings.configLoaded - timings.start).toFixed(2)}ms`,
+            '请求准备': `${(timings.requestSent - timings.configLoaded).toFixed(2)}ms`,
+            'API请求': `${(timings.responseReceived - timings.requestSent).toFixed(2)}ms`,
+            '响应处理': `${(timings.end - timings.responseReceived).toFixed(2)}ms`,
+            '总耗时': `${(timings.end - timings.start).toFixed(2)}ms`
+        };
 
         if (mode === 'annotate') {
             try {
@@ -135,19 +174,22 @@ ${text}`
                     throw new Error('API返回的数据格式不正确');
                 }
 
+                sendLog('翻译完成', timingSummary);
                 return { annotations: parsedData.annotations };
             } catch (error) {
-                console.error('Failed to parse annotations:', error);
+                sendLog('注释解析失败', error.message);
                 throw new Error('注释数据格式错误');
             }
         } else {
             if (!data.choices?.[0]?.message?.content) {
                 throw new Error('响应数据格式错误');
             }
+
+            sendLog('翻译完成', timingSummary);
             return { translation: data.choices[0].message.content.trim() };
         }
     } catch (error) {
-        console.error('API request failed:', error);
+        sendLog('请求失败', error.message);
         throw error;
     }
 } 
