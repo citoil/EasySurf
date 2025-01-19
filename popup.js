@@ -50,4 +50,15 @@ document.getElementById('translatePage').addEventListener('click', async () => {
             window.close(); // 关闭popup
         }
     });
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    // 禁用全局翻译按钮
+    const translatePageBtn = document.getElementById('translatePage');
+    if (translatePageBtn) {
+        translatePageBtn.disabled = true;
+        translatePageBtn.title = '功能开发中...';
+        translatePageBtn.style.opacity = '0.5';
+        translatePageBtn.style.cursor = 'not-allowed';
+    }
 }); 

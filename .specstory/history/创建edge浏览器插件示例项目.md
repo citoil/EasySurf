@@ -12829,6 +12829,700 @@ _**Assistant**_
 
 ---
 
+_**User**_
+
+现在差不多了，我们继续修复全局翻译的问题，我发现我但凡使用了全局翻译，就会有无数的请求不停打出去，这是为什么
+
+---
+
+_**Assistant**_
+
+让我看看代码，找出导致重复请求的问题。
+
+问题出在 `handleParagraphAnnotation` 函数中。当我们使用全局翻译时，它会同时处理多个段落，但是没有做好并发控制和重复检查。我来修改代码。
+
+---
+
+_**Assistant**_
+
+```
+// ... existing code ...
+
+// 添加一个队列来控制并发请求
+let processingQueue = Promise.resolve();
+let isProcessing = false;
+
+// 处理段落标注
+async function handleParagraphAnnotation(paragraph) {
+    if (!config.enableShiftTranslate) return;
+    
+    // 确保不重复处理已标注的段落
+    if (translatedParagraphs.has(paragraph)) {
+        console.log('段落已经标注过了');
+        return;
+    }
+
+    // 如果已经在处理中，直接返回
+    if (isProcessing) {
+        console.log('已有翻译任务正在处理中，请稍候...');
+        return;
+    }
+
+    // 获取纯文本内容
+    const text = paragraph.textContent.trim();
+    if (!text) {
+        console.log('空段落');
+        return;
+    }
+
+    // 添加加载指示器
+    const spinner = createLoadingSpinner();
+    paragraph.appendChild(spinner);
+
+    try {
+        isProcessing = true;
+
+        // 先检查缓存中是否有需要翻译的新单词
+        const wordsToTranslate = new Set();
+        const annotations = [];
+        const words = text.match(/\b[a-zA-Z]+\b/g) || [];
+        
+        // 用于跟踪本段落中已处理的单词（小写形式）
+        const processedWords = new Set();
+        
+        // 检查每个单词
+        for (const word of words) {
+            const wordLower = word.toLowerCase();
+            
+            // 如果单词已经在全局处理过，跳过
+            if (globalProcessedWords.has(wordLower)) {
+                continue;
+            }
+            
+            // 如果单词已在本段落中处理过，跳过
+            if (processedWords.has(wordLower)) {
+                continue;
+            }
+            
+            if (translationCache.has(wordLower)) {
+                // 如果单词在缓存中，直接添加到注释列表
+                annotations.push({
+                    word: word,
+                    meaning: translationCache.get(wordLower)
+                });
+                processedWords.add(wordLower);
+            } else {
+                wordsToTranslate.add(word);
+            }
+        }
+
+        // 如果有新单词需要翻译，则调用API
+        if (wordsToTranslate.size > 0) {
+            // 使用队列控制请求
+            await new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage(
+                    { type: 'translate', text: text, mode: 'annotate' },
+                    response => {
+                        if (chrome.runtime.lastError) {
+                            reject(chrome.runtime.lastError);
+                            return;
+                        }
+
+                        if (response && response.annotations && Array.isArray(response.annotations)) {
+                            // 将新翻译的单词添加到缓存
+                            response.annotations.forEach(annotation => {
+                                if (annotation.word && annotation.meaning) {
+                                    const wordLower = annotation.word.toLowerCase();
+                                    if (!processedWords.has(wordLower)) {
+                                        translationCache.set(wordLower, annotation.meaning);
+                                        annotations.push(annotation);
+                                        processedWords.add(wordLower);
+                                    }
+                                }
+                            });
+                        }
+                        resolve();
+                    }
+                );
+            });
+        }
+
+        // 处理注释
+        processAnnotations(paragraph, text, annotations);
+        
+    } catch (error) {
+        console.error('注释处理错误', error.message);
+    } finally {
+        // 移除加载指示器
+        spinner.remove();
+        isProcessing = false;
+    }
+}
+
+// ... existing code ...
+```
+
+---
+
+_**Assistant**_
+
+
+
+我已经修改了代码，主要改进如下：
+
+1. 添加了并发控制：
+   - 使用 `isProcessing` 标志来确保同一时间只处理一个翻译请求
+   - 当有翻译任务正在进行时，新的请求会被直接跳过
+
+2. 优化了单词处理逻辑：
+   - 在发送请求前，先检查单词是否已经在全局范围内处理过
+   - 如果单词已经在全局处理过，直接跳过，不再重复处理
+   - 使用 `for...of` 循环替代 `forEach`，使代码更清晰且便于控制流程
+
+3. 改进了错误处理：
+   - 使用 `try/catch/finally` 确保无论发生什么情况，都会清理加载状态
+   - 在 `finally` 块中重置 `isProcessing` 状态和移除加载指示器
+
+4. 使用 Promise 包装异步请求：
+   - 更好地控制异步流程
+   - 确保在请求完成后才继续处理下一个任务
+
+这些改动应该能解决重复请求的问题。现在当你使用全局翻译时：
+1. 只会处理未翻译过的单词
+2. 同一时间只会有一个翻译请求在进行
+3. 已经翻译过的单词会直接从缓存中获取
+
+需要我继续优化其他部分吗？
+
+---
+
+_**User**_
+
+现在全局翻译似乎又变成不翻译了。。
+
+---
+
+_**Assistant**_
+
+我看到问题了。我们需要修改代码来处理全局翻译的功能。问题在于我们缺少了全局翻译的处理函数，并且需要正确处理页面上的所有段落。
+
+---
+
+_**Assistant**_
+
+```
+// ... existing code ...
+
+// 处理整个页面的翻译
+async function handlePageTranslation() {
+    console.log('开始全局翻译');
+    
+    // 获取所有文本段落
+    const paragraphs = Array.from(document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, td, th, div'))
+        .filter(element => {
+            // 过滤掉不包含文本的元素和已经翻译过的元素
+            const text = element.textContent.trim();
+            const hasText = text.length > 0;
+            const notTranslated = !translatedParagraphs.has(element);
+            const isVisible = element.offsetParent !== null;
+            const hasEnglishWords = /[a-zA-Z]/.test(text);
+            const notScript = !element.closest('script, style');
+            const notTranslationWrapper = !element.classList.contains('translation-wrapper') && 
+                                        !element.classList.contains('translation-text');
+            
+            return hasText && notTranslated && isVisible && hasEnglishWords && 
+                   notScript && notTranslationWrapper;
+        });
+
+    console.log(`找到 ${paragraphs.length} 个待翻译段落`);
+
+    // 重置处理状态
+    isProcessing = false;
+
+    // 按顺序处理每个段落
+    for (const paragraph of paragraphs) {
+        await handleParagraphAnnotation(paragraph);
+        // 添加小延迟，避免请求过于频繁
+        await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    console.log('全局翻译完成');
+}
+
+// 修改消息监听器，确保正确处理全局翻译请求
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.type === 'log') {
+        logToConsole(request.message, request.data);
+        return;
+    }
+    
+    if (request.type === 'translatePage') {
+        handlePageTranslation()
+            .then(() => {
+                sendResponse({ success: true });
+            })
+            .catch(error => {
+                console.error('Page translation error:', error);
+                sendResponse({ success: false, error: error.message });
+            });
+        return true;
+    }
+});
+
+// ... existing code ...
+```
+
+---
+
+_**Assistant**_
+
+
+
+我已经修改了代码，主要改进如下：
+
+1. 重写了 `handlePageTranslation` 函数：
+   - 更精确地选择需要翻译的段落
+   - 添加了多个过滤条件，确保只翻译有意义的文本
+   - 按顺序处理段落，避免并发导致的问题
+
+2. 过滤条件包括：
+   - 必须包含文本
+   - 未被翻译过
+   - 元素必须可见
+   - 包含英文单词
+   - 不是脚本或样式标签
+   - 不是翻译包装器元素
+
+3. 处理流程优化：
+   - 在处理每个段落之间添加了 100ms 的延迟，避免请求过于频繁
+   - 在开始新的全局翻译前重置处理状态
+   - 添加了更详细的日志输出
+
+4. 移除了之前的并发处理逻辑，改为串行处理：
+   - 避免同时发送太多请求
+   - 确保翻译按照页面顺序进行
+   - 更容易控制和调试
+
+现在全局翻译应该可以正常工作了。当你点击全局翻译时：
+1. 会先扫描页面找到所有需要翻译的段落
+2. 按顺序处理每个段落
+3. 已经翻译过的单词会直接从缓存中获取
+4. 新的单词会被翻译并加入缓存
+
+需要我继续调整其他部分吗？
+
+---
+
+_**User**_
+
+全文翻译的按钮先设置成无法点击吧。暂时先保留这个功能的悬念，先不要让用户能点
+
+---
+
+_**Assistant**_
+
+好的，我来修改代码，暂时禁用全局翻译按钮。我们需要在 `popup.js` 中修改按钮的状态。
+
+---
+
+_**Assistant**_
+
+```
+document.addEventListener('DOMContentLoaded', () => {
+    // ... existing code ...
+
+    // 禁用全局翻译按钮
+    const translatePageBtn = document.getElementById('translatePage');
+    if (translatePageBtn) {
+        translatePageBtn.disabled = true;
+        translatePageBtn.title = '功能开发中...';
+        translatePageBtn.style.opacity = '0.5';
+        translatePageBtn.style.cursor = 'not-allowed';
+    }
+
+    // ... existing code ...
+```
+
+---
+
+_**Assistant**_
+
+
+
+我还需要修改 `popup.html` 来更新按钮的显示状态。
+
+---
+
+_**Assistant**_
+
+```
+<!-- ... existing code ... -->
+<button id="translatePage" class="button" style="background-color: #f5f5f5; color: #999;">
+    全文翻译 (开发中...)
+</button>
+<!-- ... existing code ... -->
+```
+
+---
+
+_**Assistant**_
+
+
+
+我已经做了以下修改：
+
+1. 在 `popup.js` 中：
+   - 添加了代码禁用全局翻译按钮
+   - 设置了按钮的 `disabled` 属性
+   - 添加了提示文本 "功能开发中..."
+   - 调整了按钮的样式（降低透明度和修改鼠标样式）
+
+2. 在 `popup.html` 中：
+   - 修改了按钮的样式为灰色
+   - 更新了按钮文本，添加了"开发中"的提示
+   - 移除了原有的图标
+
+现在全局翻译按钮会显示为禁用状态，用户将无法点击它，并且可以看到这是一个正在开发中的功能。
+
+需要我继续调整其他部分吗？
+
+---
+
+_**User**_
+
+现在好像不能在翻译第一段的时候 双击 shift 翻译第二段了，帮我解除这个限制吧
+
+---
+
+_**Assistant**_
+
+
+
+我明白了，这个问题是因为我们之前添加的 `isProcessing` 标志限制了同时处理多个段落。我来修改代码，允许在一个段落正在翻译时也能开始翻译另一个段落。
+
+---
+
+_**Assistant**_
+
+```
+// ... existing code ...
+
+// 用于记录正在处理中的段落
+const processingParagraphs = new WeakSet();
+
+// 处理段落标注
+async function handleParagraphAnnotation(paragraph) {
+    if (!config.enableShiftTranslate) return;
+    
+    // 确保不重复处理已标注的段落
+    if (translatedParagraphs.has(paragraph)) {
+        console.log('段落已经标注过了');
+        return;
+    }
+
+    // 如果该段落正在处理中，直接返回
+    if (processingParagraphs.has(paragraph)) {
+        console.log('该段落正在处理中，请稍候...');
+        return;
+    }
+
+    // 获取纯文本内容
+    const text = paragraph.textContent.trim();
+    if (!text) {
+        console.log('空段落');
+        return;
+    }
+
+    // 添加加载指示器
+    const spinner = createLoadingSpinner();
+    paragraph.appendChild(spinner);
+
+    try {
+        // 标记段落为处理中
+        processingParagraphs.add(paragraph);
+
+        // 先检查缓存中是否有需要翻译的新单词
+        const wordsToTranslate = new Set();
+        const annotations = [];
+        const words = text.match(/\b[a-zA-Z]+\b/g) || [];
+        
+        // 用于跟踪本段落中已处理的单词（小写形式）
+        const processedWords = new Set();
+        
+        // 检查每个单词
+        for (const word of words) {
+            const wordLower = word.toLowerCase();
+            
+            // 如果单词已经在全局处理过，跳过
+            if (globalProcessedWords.has(wordLower)) {
+                continue;
+            }
+            
+            // 如果单词已在本段落中处理过，跳过
+            if (processedWords.has(wordLower)) {
+                continue;
+            }
+            
+            if (translationCache.has(wordLower)) {
+                // 如果单词在缓存中，直接添加到注释列表
+                annotations.push({
+                    word: word,
+                    meaning: translationCache.get(wordLower)
+                });
+                processedWords.add(wordLower);
+            } else {
+                wordsToTranslate.add(word);
+            }
+        }
+
+        // 如果有新单词需要翻译，则调用API
+        if (wordsToTranslate.size > 0) {
+            await new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage(
+                    { type: 'translate', text: text, mode: 'annotate' },
+                    response => {
+                        if (chrome.runtime.lastError) {
+                            reject(chrome.runtime.lastError);
+                            return;
+                        }
+
+                        if (response && response.annotations && Array.isArray(response.annotations)) {
+                            // 将新翻译的单词添加到缓存
+                            response.annotations.forEach(annotation => {
+                                if (annotation.word && annotation.meaning) {
+                                    const wordLower = annotation.word.toLowerCase();
+                                    if (!processedWords.has(wordLower)) {
+                                        translationCache.set(wordLower, annotation.meaning);
+                                        annotations.push(annotation);
+                                        processedWords.add(wordLower);
+                                    }
+                                }
+                            });
+                        }
+                        resolve();
+                    }
+                );
+            });
+        }
+
+        // 处理注释
+        processAnnotations(paragraph, text, annotations);
+        
+    } catch (error) {
+        console.error('注释处理错误', error.message);
+    } finally {
+        // 移除加载指示器
+        spinner.remove();
+        // 移除段落的处理中状态
+        processingParagraphs.delete(paragraph);
+    }
+}
+
+// ... existing code ...
+```
+
+---
+
+_**Assistant**_
+
+
+
+
+
+
+
+我已经修改了代码，主要改动如下：
+
+1. 移除了全局的 `isProcessing` 标志
+2. 添加了 `processingParagraphs` WeakSet 来跟踪每个段落的处理状态
+3. 修改了处理状态的检查逻辑：
+   - 现在只检查当前段落是否正在处理中
+   - 允许同时处理多个不同的段落
+4. 在处理完成后正确清理段落的处理状态
+
+这些改动意味着：
+1. 你可以在一个段落正在翻译时，双击 Shift 开始翻译另一个段落
+2. 每个段落都有自己独立的处理状态
+3. 避免重复处理同一个段落
+4. 仍然保持了缓存和全局单词处理的功能
+
+现在你应该可以在翻译第一段的同时，通过双击 Shift 来翻译第二段了。需要我继续调整其他部分吗？
+
+---
+
+_**User**_
+
+帮我更新下 @README.md 吧
+
+---
+
+_**Assistant**_
+
+好的，我来帮你创建一个详细的 README.md 文件。
+
+---
+
+_**Assistant**_
+
+```
+# EasySurf
+
+EasySurf 是一个智能的浏览器扩展，专为提升中国程序员的英文阅读体验而设计。它利用大语言模型的能力，提供即时翻译和智能注释功能，让英文阅读更轻松自然。
+
+## 主要特性
+
+### 1. 智能选词翻译
+- 选中任意英文单词或短语，即时获取准确的中文翻译
+- 翻译结果优雅地显示在原文上方
+- 支持自动识别专业术语和常见表达
+
+### 2. 段落难词注释
+- 双击 Shift 键激活段落翻译功能
+- 自动识别并标注段落中的难词
+- 智能分析上下文，提供最贴切的中文释义
+- 对已翻译的单词进行缓存，提高响应速度
+- 相同单词仅在首次出现时显示翻译，减少视觉干扰
+
+### 3. 优雅的视觉体验
+- 翻译结果采用简洁的悬浮显示
+- 难词标注使用优雅的绿色波浪下划线
+- 适配深色/浅色主题
+- 不影响原网页的排版和布局
+
+### 4. 高性能设计
+- 使用内存缓存存储翻译结果
+- 智能防抖和节流处理
+- 异步处理保证页面响应流畅
+- 支持大规模文本的高效处理
+
+## 安装说明
+
+1. 克隆仓库到本地
+```bash
+git clone [repository-url]
+```
+
+2. 在 Chrome 浏览器中加载扩展：
+   - 打开 Chrome 浏览器
+   - 访问 `chrome://extensions/`
+   - 开启"开发者模式"
+   - 点击"加载已解压的扩展程序"
+   - 选择项目目录
+
+3. 配置 API：
+   - 点击扩展图标
+   - 点击"设置"
+   - 输入你的 API Key
+   - 选择 API 端点（支持 DeepSeek/OpenAI）
+
+## 使用方法
+
+### 选词翻译
+1. 用鼠标选中任意英文单词或短语
+2. 翻译结果会自动显示在选中文本的上方
+
+### 段落难词注释
+1. 将鼠标悬停在要翻译的段落上
+2. 双击 Shift 键
+3. 插件会自动识别并标注段落中的难词
+4. 难词会显示绿色波浪下划线，翻译显示在上方
+
+### 功能开关
+- 在扩展的弹出窗口中可以：
+  - 启用/禁用选词翻译
+  - 启用/禁用段落翻译
+  - 访问更多设置选项
+
+## 技术栈
+
+- Chrome Extension Manifest V3
+- JavaScript (ES6+)
+- DeepSeek/OpenAI API
+- CSS3 动画和过渡效果
+
+## 注意事项
+
+- 使用前请确保已配置有效的 API Key
+- 建议使用最新版本的 Chrome 浏览器
+- 如遇到问题，可以尝试刷新页面或重启浏览器
+
+## 开发计划
+
+- [ ] 全文翻译功能（开发中）
+- [ ] 自定义样式设置
+- [ ] 更多 API 供应商支持
+- [ ] 离线词典支持
+- [ ] 生词本功能
+
+## 许可证
+
+MIT License
+```
+
+---
+
+_**Assistant**_
+
+
+
+我已经创建了一个全新的 README.md 文件，包含了以下主要内容：
+
+1. 项目简介：突出了 EasySurf 的核心价值和目标用户群
+2. 主要特性：
+   - 智能选词翻译
+   - 段落难词注释
+   - 优雅的视觉体验
+   - 高性能设计
+3. 安装说明：详细的安装步骤和配置指南
+4. 使用方法：具体的功能使用说明
+5. 技术栈：使用的主要技术
+6. 注意事项：使用时需要注意的问题
+7. 开发计划：未来的功能规划
+
+特别标注了全文翻译功能目前处于开发中的状态。
+
+需要我对 README 做进一步的调整吗？比如添加更多的技术细节或使用示例？
+
+---
+
+_**User**_
+
+我如何把这个推到 git 上面 git 我已经创建好仓库了
+
+---
+
+_**Assistant**_
+
+我来帮你设置 Git 仓库并推送代码。首先，我们需要初始化 Git 仓库并添加必要的文件。
+
+---
+
+_**Assistant**_
+
+```
+git init
+```
+
+---
+
+_**Assistant**_
+
+
+
+---
+
+_**User**_
+
+我本地已经都搞好了 我就想推到 github 上面
+
+---
+
+_**Assistant**_
+
+
+
+---
+
 
 
 ---

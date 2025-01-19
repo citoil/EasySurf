@@ -16,6 +16,9 @@ const translatedParagraphs = new WeakSet();
 // 创建一个全局 Set 来跟踪所有已经翻译过的单词
 const globalProcessedWords = new Set();
 
+// 用于记录正在处理中的段落
+const processingParagraphs = new WeakSet();
+
 // 添加样式定义
 const STYLES = {
     wrapper: {
@@ -170,36 +173,37 @@ class Semaphore {
     }
 }
 
-// 处理整页翻译
+// 处理整个页面的翻译
 async function handlePageTranslation() {
-    const paragraphs = getAllParagraphs();
-    if (paragraphs.length === 0) {
-        console.log('No paragraphs found for translation');
-        return;
-    }
+    console.log('开始全局翻译');
+    
+    // 获取所有文本段落
+    const paragraphs = Array.from(document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, td, th, div'))
+        .filter(element => {
+            // 过滤掉不包含文本的元素和已经翻译过的元素
+            const text = element.textContent.trim();
+            const hasText = text.length > 0;
+            const notTranslated = !translatedParagraphs.has(element);
+            const isVisible = element.offsetParent !== null;
+            const hasEnglishWords = /[a-zA-Z]/.test(text);
+            const notScript = !element.closest('script, style');
+            const notTranslationWrapper = !element.classList.contains('translation-wrapper') && 
+                                        !element.classList.contains('translation-text');
+            
+            return hasText && notTranslated && isVisible && hasEnglishWords && 
+                   notScript && notTranslationWrapper;
+        });
 
-    console.log(`Found ${paragraphs.length} paragraphs to translate`);
-    const semaphore = new Semaphore(config.maxConcurrent);
-    const promises = [];
+    console.log(`找到 ${paragraphs.length} 个待翻译段落`);
 
+    // 按顺序处理每个段落
     for (const paragraph of paragraphs) {
-        const promise = (async () => {
-            await semaphore.acquire();
-            try {
-                await handleParagraphAnnotation(paragraph);
-            } finally {
-                semaphore.release();
-            }
-        })();
-        promises.push(promise);
+        await handleParagraphAnnotation(paragraph);
+        // 添加小延迟，避免请求过于频繁
+        await new Promise(resolve => setTimeout(resolve, 100));
     }
 
-    try {
-        await Promise.all(promises);
-        console.log('Page translation completed');
-    } catch (error) {
-        console.error('Error during page translation:', error);
-    }
+    console.log('全局翻译完成');
 }
 
 // 跟踪鼠标悬停的段落
@@ -325,6 +329,9 @@ function createLoadingSpinner() {
     return spinner;
 }
 
+// 添加一个队列来控制并发请求
+let processingQueue = Promise.resolve();
+
 // 处理段落标注
 async function handleParagraphAnnotation(paragraph) {
     if (!config.enableShiftTranslate) return;
@@ -332,6 +339,12 @@ async function handleParagraphAnnotation(paragraph) {
     // 确保不重复处理已标注的段落
     if (translatedParagraphs.has(paragraph)) {
         console.log('段落已经标注过了');
+        return;
+    }
+
+    // 如果该段落正在处理中，直接返回
+    if (processingParagraphs.has(paragraph)) {
+        console.log('该段落正在处理中，请稍候...');
         return;
     }
 
@@ -347,6 +360,9 @@ async function handleParagraphAnnotation(paragraph) {
     paragraph.appendChild(spinner);
 
     try {
+        // 标记段落为处理中
+        processingParagraphs.add(paragraph);
+
         // 先检查缓存中是否有需要翻译的新单词
         const wordsToTranslate = new Set();
         const annotations = [];
@@ -355,11 +371,18 @@ async function handleParagraphAnnotation(paragraph) {
         // 用于跟踪本段落中已处理的单词（小写形式）
         const processedWords = new Set();
         
-        words.forEach(word => {
+        // 检查每个单词
+        for (const word of words) {
             const wordLower = word.toLowerCase();
-            // 检查单词是否已在本段落中处理过
+            
+            // 如果单词已经在全局处理过，跳过
+            if (globalProcessedWords.has(wordLower)) {
+                continue;
+            }
+            
+            // 如果单词已在本段落中处理过，跳过
             if (processedWords.has(wordLower)) {
-                return;
+                continue;
             }
             
             if (translationCache.has(wordLower)) {
@@ -372,56 +395,48 @@ async function handleParagraphAnnotation(paragraph) {
             } else {
                 wordsToTranslate.add(word);
             }
-        });
-
-        // 检查单词是否已经在全局范围内处理过
-        const isFirstGlobalOccurrence = (word) => {
-            const lowerWord = word.toLowerCase();
-            if (globalProcessedWords.has(lowerWord)) {
-                return false;
-            }
-            globalProcessedWords.add(lowerWord);
-            return true;
-        };
+        }
 
         // 如果有新单词需要翻译，则调用API
         if (wordsToTranslate.size > 0) {
-            chrome.runtime.sendMessage(
-                { type: 'translate', text: text, mode: 'annotate' },
-                response => {
-                    // 移除加载指示器
-                    spinner.remove();
+            await new Promise((resolve, reject) => {
+                chrome.runtime.sendMessage(
+                    { type: 'translate', text: text, mode: 'annotate' },
+                    response => {
+                        if (chrome.runtime.lastError) {
+                            reject(chrome.runtime.lastError);
+                            return;
+                        }
 
-                    if (chrome.runtime.lastError) {
-                        console.error('Chrome runtime error:', chrome.runtime.lastError);
-                        return;
-                    }
-
-                    if (response && response.annotations && Array.isArray(response.annotations)) {
-                        // 将新翻译的单词添加到缓存
-                        response.annotations.forEach(annotation => {
-                            if (annotation.word && annotation.meaning) {
-                                const wordLower = annotation.word.toLowerCase();
-                                if (!processedWords.has(wordLower)) {
-                                    translationCache.set(wordLower, annotation.meaning);
-                                    annotations.push(annotation);
-                                    processedWords.add(wordLower);
+                        if (response && response.annotations && Array.isArray(response.annotations)) {
+                            // 将新翻译的单词添加到缓存
+                            response.annotations.forEach(annotation => {
+                                if (annotation.word && annotation.meaning) {
+                                    const wordLower = annotation.word.toLowerCase();
+                                    if (!processedWords.has(wordLower)) {
+                                        translationCache.set(wordLower, annotation.meaning);
+                                        annotations.push(annotation);
+                                        processedWords.add(wordLower);
+                                    }
                                 }
-                            }
-                        });
-
-                        processAnnotations(paragraph, text, annotations);
+                            });
+                        }
+                        resolve();
                     }
-                }
-            );
-        } else {
-            // 如果所有单词都在缓存中，直接处理注释
-            spinner.remove();
-            processAnnotations(paragraph, text, annotations);
+                );
+            });
         }
+
+        // 处理注释
+        processAnnotations(paragraph, text, annotations);
+        
     } catch (error) {
-        spinner.remove();
         console.error('注释处理错误', error.message);
+    } finally {
+        // 移除加载指示器
+        spinner.remove();
+        // 移除段落的处理中状态
+        processingParagraphs.delete(paragraph);
     }
 }
 
@@ -538,7 +553,7 @@ function logToConsole(message, data) {
     }
 }
 
-// 在现有的消息监听器中添加日志处理
+// 修改消息监听器，确保正确处理全局翻译请求
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.type === 'log') {
         logToConsole(request.message, request.data);
@@ -546,12 +561,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     }
     
     if (request.type === 'translatePage') {
-        handlePageTranslation().then(() => {
-            sendResponse({ success: true });
-        }).catch(error => {
-            console.error('Page translation error:', error);
-            sendResponse({ success: false, error: error.message });
-        });
+        handlePageTranslation()
+            .then(() => {
+                sendResponse({ success: true });
+            })
+            .catch(error => {
+                console.error('Page translation error:', error);
+                sendResponse({ success: false, error: error.message });
+            });
         return true;
     }
 });

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Edge翻译插件",
-  "version": "1.0",
-  "description": "一个使用OpenAI的网页翻译插件",
+  "name": "EasySurf",
+  "version": "0.1.0",
+  "description": "一个使用大模型进行翻译的英文阅读使用插件",
   "permissions": [
     "activeTab",
     "scripting",

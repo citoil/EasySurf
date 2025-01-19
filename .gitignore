@@ -1,0 +1,30 @@
+# IDE 和编辑器文件
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# 依赖目录
+node_modules/
+
+# 构建输出
+dist/
+build/
+
+# 日志文件
+*.log
+npm-debug.log*
+
+# 环境变量文件
+.env
+.env.local
+.env.*.local
+
+# Chrome 扩展打包文件
+*.crx
+*.pem
+
+# 其他
+.cache/
+coverage/ 
