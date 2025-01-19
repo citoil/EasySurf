@@ -130,7 +130,7 @@ async function handleTranslation(text, mode) {
                 },
                 {
                     role: "user",
-                    content: `请帮我找出下面英文文本中对中国程序员来说不容易理解的单词或短语（本科英语水平），并给出简短的中文释义（不超过6个字）。请严格按照以下JSON格式返回：
+                    content: `请帮我找出下面英文文本中对中国程序员来说最不容易理解的0-5个单词或短语（本科英语水平），并给出简短的中文释义（不超过6个字）。请严格按照以下JSON格式返回：
 {
     "annotations": [
         {
@@ -164,7 +164,7 @@ ${text}`
         const requestBody = {
             model: config.modelName || DEFAULT_CONFIG.modelName,
             messages: messages,
-            temperature: 0.3,
+            temperature: 0,
             response_format: mode === 'annotate' ? { type: "json_object" } : undefined,
             stream: mode !== 'annotate' // 非注释模式使用流式输出
         };
